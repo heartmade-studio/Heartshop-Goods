@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en" data-offer="magic-box">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Order — Magic box</title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="stylesheet" href="../assets/shop.css?v=10">
+</head>
+<body>
+<div class="demo-banner" id="demo-banner" hidden>Test mode — pay with BLIK using code 777123, no money will be taken.</div>
+
+<header class="site-header">
+  <div class="wrap"><a class="brand" href="./">Magic box</a><div class="header-end"><span class="badge secure">Secure order</span><nav class="lang" aria-label="Language"><a id="lang-alt" href="../zamowienie.html" hreflang="pl" lang="pl">PL</a><span aria-current="true">EN</span></nav></div></div>
+</header>
+
+<main class="checkout">
+  <div class="wrap">
+    <a class="back" href="./">← Back to the product</a>
+    <p class="demo-context">Demo shop — example order; no physical product or service.</p>
+    <h1>Your order</h1>
+    <p class="muted">Three steps: contact, delivery, payment.</p>
+
+    <div class="layout">
+      <aside class="summary" aria-label="Order summary">
+        <div class="sum-product">
+          <div class="product-line">
+            <img class="thumb" src="../assets/magic-box-thumb.webp" alt="" width="240" height="320">
+            <div class="body">
+              <div class="name" id="p-name">Magic box</div>
+              <div class="variant" id="p-variant"></div>
+            </div>
+            <div class="price-each" id="p-price"></div>
+          </div>
+          <div class="qty-row">
+            <span id="qty-label">Quantity</span>
+            <div class="stepper" role="group" aria-labelledby="qty-label">
+              <button type="button" id="qty-minus" aria-label="Fewer">−</button>
+              <output id="qty" aria-live="polite">1</output>
+              <button type="button" id="qty-plus" aria-label="More">+</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="sum-pay">
+          <div class="totals">
+            <div><span>Products</span><span id="t-items">—</span></div>
+            <div><span>Delivery</span><span id="t-ship">—</span></div>
+            <div class="grand"><span>To pay</span><span id="t-total">—</span></div>
+          </div>
+          <p class="nudge" id="nudge" hidden></p>
+          <div class="form-alert" id="form-alert" role="alert" hidden></div>
+          <button class="btn btn-block" id="pay" type="submit" form="order">Buy and pay</button>
+          <p class="pay-note">The payment opens in a window on this page.</p>
+          <div class="methods" id="methods"></div>
+        </div>
+      </aside>
+
+      <form class="form" id="order" novalidate>
+        <fieldset class="fieldset">
+          <legend>Contact</legend>
+          <div class="grid grid-2">
+            <div class="field" data-field="email">
+              <label for="email">Email</label>
+              <input id="email" name="email" type="email" autocomplete="email" inputmode="email" required>
+              <div class="hint">We send the confirmation here.</div>
+              <div class="error"></div>
+            </div>
+            <div class="field" data-field="phone">
+              <label for="phone">Phone</label>
+              <input id="phone" name="phone" type="tel" autocomplete="tel-national" inputmode="tel" placeholder="500 600 700" required>
+              <div class="hint">Polish number, for the courier or the Paczkomat pickup code.</div>
+              <div class="error"></div>
+            </div>
+          </div>
+        </fieldset>
+
+        <fieldset class="fieldset">
+          <legend>Delivery</legend>
+          <div class="options" data-field="delivery" id="delivery-options"></div>
+          <div class="error" id="delivery-error"></div>
+
+          <div class="field" data-field="name" style="margin-top:16px">
+            <label for="name">Recipient's first and last name</label>
+            <input id="name" name="name" autocomplete="name" required>
+            <div class="error"></div>
+          </div>
+
+          <div class="grid address">
+            <div class="field" data-field="street">
+              <label for="street">Street and number</label>
+              <input id="street" name="street" autocomplete="street-address" placeholder="ul. Lipowa 4/12" required>
+              <div class="error"></div>
+            </div>
+            <div class="grid grid-pc">
+              <div class="field" data-field="postcode">
+                <label for="postcode">Postcode</label>
+                <input id="postcode" name="postcode" autocomplete="postal-code" inputmode="numeric" placeholder="00-000" maxlength="6" required>
+                <div class="error"></div>
+              </div>
+              <div class="field" data-field="city">
+                <label for="city">Town or city</label>
+                <input id="city" name="city" autocomplete="address-level2" required>
+                <div class="error"></div>
+              </div>
+            </div>
+            <div class="hint" id="address-hint" hidden>The carrier needs the recipient's address for Paczkomat delivery too.</div>
+          </div>
+
+          <div class="reveal" id="reveal-paczkomat" hidden>
+            <div data-field="point">
+              <div class="point" id="point-chosen" hidden>
+                <div class="body"><strong id="point-code"></strong><span id="point-address" class="muted"></span></div>
+                <button type="button" class="btn btn-ghost btn-sm" id="point-change">Change</button>
+              </div>
+              <button type="button" class="btn btn-ghost btn-block" id="point-open" hidden>Choose a Paczkomat on the map</button>
+              <div class="field" id="point-manual" hidden>
+                <label for="point-input">Paczkomat code</label>
+                <input id="point-input" autocomplete="off" autocapitalize="characters" placeholder="e.g. WAW22A">
+                <div class="hint">Don't know the code? <a href="https://inpost.pl/znajdz-paczkomat" target="_blank" rel="noopener">Find a Paczkomat on the InPost map ↗</a></div>
+              </div>
+              <div class="error"></div>
+            </div>
+          </div>
+        </fieldset>
+
+        <fieldset class="fieldset" id="invoice-set">
+          <legend>Invoice and consent</legend>
+          <label class="check" id="invoice-toggle"><input type="checkbox" id="invoice" name="invoice"> <span>I need a company invoice</span></label>
+          <div class="reveal" id="reveal-invoice" hidden>
+            <div class="grid">
+              <div class="grid grid-2">
+                <div class="field" data-field="company">
+                  <label for="company">Company name</label>
+                  <input id="company" name="company" autocomplete="organization" maxlength="100">
+                  <div class="error"></div>
+                </div>
+                <div class="field" data-field="nip">
+                  <label for="nip">NIP (Polish tax ID)</label>
+                  <input id="nip" name="nip" inputmode="numeric" placeholder="1234567890" maxlength="13">
+                  <div class="error"></div>
+                </div>
+              </div>
+              <div class="field" data-field="company_address">
+                <label for="company_address">Company address</label>
+                <input id="company_address" name="company_address" placeholder="ul. Przykładowa 1, 00-000 Miasto">
+                <div class="error"></div>
+              </div>
+            </div>
+          </div>
+          <div class="check-wrap" data-field="terms" style="margin-top:18px">
+            <label class="check"><input type="checkbox" id="terms" name="terms"> <span>I accept the <a href="terms.html" target="_blank">terms</a> and the <a href="privacy.html" target="_blank">privacy policy</a>.</span></label>
+            <div class="error"></div>
+          </div>
+        </fieldset>
+      </form>
+    </div>
+  </div>
+</main>
+
+<dialog class="map" id="map-dialog" aria-label="Choose a Paczkomat">
+  <div class="bar"><strong>Choose a Paczkomat</strong><button type="button" class="btn btn-ghost btn-sm" id="map-close">Close</button></div>
+  <div id="map-host"></div>
+</dialog>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <span>Heartmade demo shop</span>
+    <nav><a href="terms.html">Terms</a><a href="privacy.html">Privacy policy</a></nav>
+  </div>
+</footer>
+<script src="../assets/i18n.js?v=4"></script>
+<script src="../assets/attempt.js?v=3"></script>
+<script src="../assets/checkout.js?v=10"></script>
+</body>
+</html>
