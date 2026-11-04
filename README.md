@@ -2,16 +2,21 @@
 
 A small, self-hosted shop for physical products, by [Heartmade Studio](https://heartmade.pl/). Plain HTML/CSS/JavaScript, PHP and SQLite.
 
-**Built for real transactions with PAYMOVE.io and Furgonetka.pl.** PAYMOVE is the intentionally chosen agent-oriented payment gateway; Heartshop currently connects through its server-side REST API, browser checkout and signed webhooks. Furgonetka provides the merchant interface for shipment booking, labels and sales invoices. Heartshop exports paid physical orders and invoice data to its custom-store integration. It does not issue invoices itself or include an autonomous payment agent.
+**Built for real transactions with PAYMOVE.io and Furgonetka.pl.** PAYMOVE is the intentionally chosen agent-oriented payment gateway; Heartshop currently connects through its server-side REST API, browser checkout and signed webhooks. Heartshop exports paid physical orders and invoice data into the Furgonetka client panel. That panel is where the merchant processes orders — shipments and labels — and issues sales invoices. Heartshop does not issue invoices itself or include an autonomous payment agent.
+
+![Furgonetka test environment: paid Heartshop orders under E-commerce → Sales, with shipment actions and Issue invoice](docs/screenshots/furgonetka-panel.jpg)
+
+*Furgonetka client panel, test environment, captured 2026-11-04. Orders from the Heartshop test shop arrive under E-commerce → Sales. The merchant creates the shipment here and issues the invoice from the same list.*
 
 This initial standalone distribution starts in **local simulation**. Live selling requires your merchant accounts, real product/seller/legal content, configuration and the acceptance checks in [production setup](docs/production.md). Automated tests do not establish that a merchant account is ready to take money.
 
 ## Po polsku — prosty sklep, który możesz prowadzić po swojemu
 
 Masz jeden produkt i chcesz sprzedawać go z własnej strony? Heartshop Goods
-łączy płatność PAYMOVE.io z obsługą przesyłek i danych do faktur w Furgonetka.pl.
-Fakturę wystawia sprzedawca w swoim skonfigurowanym module Furgonetki; sam sklep
-jej nie tworzy. To prosty punkt wyjścia, bez koszyka wielu produktów i magazynu.
+łączy płatność PAYMOVE.io z panelem klienta Furgonetka.pl. Opłacone zamówienia
+pojawiają się w tym panelu: tam sprzedawca obsługuje przesyłki i wystawia faktury.
+Sam sklep faktury nie tworzy. To prosty punkt wyjścia, bez koszyka wielu produktów
+i magazynu.
 
 To projekt open source Heartmade Studio na licencji MIT. Możesz pobrać kod,
 uruchomić przykład lokalnie i dostosować go do swojej działalności. Programistom
@@ -64,7 +69,7 @@ The local simulator is not PAYMOVE sandbox. It checks the application flow witho
 - Server-priced PLN checkout, physical product example.
 - PAYMOVE hosted checkout, HMAC-verified webhooks, immutable order snapshots and retry protection.
 - Furgonetka authenticated order export and tracking-number callback.
-- Seller panel: orders, notes, CSV, manual invoice/fulfillment markers.
+- Seller panel: orders, notes, CSV, and manual markers for invoice and fulfillment status. Issuing the invoice stays in the Furgonetka panel.
 - Durable email outbox with a separate CLI worker.
 - Polish and English storefront; the panel is currently Polish.
 

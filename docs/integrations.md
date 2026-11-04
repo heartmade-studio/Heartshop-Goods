@@ -15,7 +15,7 @@ The initial provider identity binding comes from the first verified webhook, bec
 
 ## Furgonetka.pl
 
-[Furgonetka](https://furgonetka.pl/) is the shipment and invoice workspace. Add a custom-store integration using the base URL `https://YOUR-HOST/heartshop/api/furgonetka` and the shared random `FURGONETKA_TOKEN`. This is an inbound integration: Furgonetka calls Heartshop; no Furgonetka OAuth client is required by this adapter.
+[Furgonetka](https://furgonetka.pl/) is the shipment and invoice workspace. Paid orders land in the Furgonetka client panel, under E-commerce → Sales, where the merchant processes shipments and issues invoices. Preview: [Furgonetka panel](screenshots/furgonetka-panel.jpg). Add a custom-store integration using the base URL `https://YOUR-HOST/heartshop/api/furgonetka` and the shared random `FURGONETKA_TOKEN`. This is an inbound integration: Furgonetka calls Heartshop; no Furgonetka OAuth client is required by this adapter.
 
 [Custom-store API contract](https://furgonetka.pl/api/universal-integration-example):
 

@@ -11,6 +11,7 @@
   Checkout uses Node 24; pinned setup-php already uses Node 24.
 - Polish introduction, contributor guide and local simulation screenshot.
 - PL/EN invoice FAQ describes the merchant's Furgonetka invoice module.
+- README preview of the Furgonetka client panel, where paid orders are processed and invoices are issued.
 - Misleading voucher-service docs removed; coupled core cleanup documented.
 
 No tag or release has been published for this proposal. Provider acceptance and

@@ -11,7 +11,7 @@ The first standalone version was extracted from the Heartmade website's shop com
 3. PAYMOVE returns a checkout URL. Browser callbacks are UX signals, not proof of payment.
 4. The signed webhook changes payment state and enqueues mail in one SQLite transaction. A price or provider-order conflict becomes `review`; fulfillment stays blocked.
 5. A separate worker sends queued email. Paid non-demo physical orders are exposed to Furgonetka.
-6. Furgonetka calls the tracking endpoint after shipment preparation. Merchant action in Furgonetka handles labels and invoices.
+6. Imported orders appear in the Furgonetka client panel, where the merchant processes shipments and issues invoices. Furgonetka calls the tracking endpoint after shipment preparation.
 
 SQLite WAL files and private configuration must have owner-only permissions outside the web root. The panel uses a password hash and hashed server-side session tokens. API responses are not cached; order status links are bearer links and must not be shared publicly.
 
