@@ -27,7 +27,10 @@ Pomagamy ogarnąć technologię, żeby zostało Ci więcej miejsca na własną p
 Zakres i warunki wdrożenia ustalane są dla konkretnego sklepu. Bezpłatny kod nie
 obejmuje hostingu ani opieki nad uruchomionym sklepem.
 
-### Zobacz lokalny przykład
+### Zobacz przykład
+
+Demo na żywo: [heartmade.pl/heartshop](https://heartmade.pl/heartshop/) (osobna instalacja Heartmade, płatności testowe).
+
 
 ![Lokalna symulacja sklepu; przykładowa oferta i ilustracja AI](docs/screenshots/storefront.jpg)
 
@@ -96,3 +99,5 @@ Tests run with synthetic credentials and isolated temporary databases. They cove
 - [MIT license](LICENSE), with separate [third-party notices](THIRD_PARTY_NOTICES.md).
 
 The included product images are labeled AI illustrations, not photographs of goods or services for sale. Heartmade Studio provides project authorship and implementation services; operating a deployed shop remains the merchant's responsibility.
+
+Want it set up for you instead? Heartmade configures Heartshop stores, content and legal templates as a paid service: see [Heartmade websites and stores](https://heartmade.pl/en/websites).
