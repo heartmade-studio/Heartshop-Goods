@@ -23,7 +23,7 @@ The initial provider identity binding comes from the first verified webhook, bec
 - `POST /orders/{number}/tracking_number` stores `tracking.number` and `tracking.courierService` for an eligible paid order.
 - Both require `Authorization: <token>`; the adapter also accepts `Bearer <token>` and `Token <token>`. Apache must forward this header to PHP.
 
-Invoice issuance happens in Furgonetka's invoice module after its configuration, not automatically in Heartshop. See [Furgonetka invoice instructions](https://c.furgonetka.pl/public.furgonetka.pl/media_help/Faktury_KSeF_od_Furgonetka.pl_Instrukcja.pdf). **Vouchers are excluded** from shipment export; their invoices must be issued separately and marked in the Heartshop panel. Test actual field mapping, order import, a shipment label and invoice workflow on your account before launch.
+Invoice issuance happens in Furgonetka's invoice module after its configuration, not automatically in Heartshop. See [Furgonetka invoice instructions](https://c.furgonetka.pl/public.furgonetka.pl/media_help/Faktury_KSeF_od_Furgonetka.pl_Instrukcja.pdf). Only physical orders are supported by this edition. Test actual field mapping, order import, a shipment label and invoice workflow on your account before launch.
 
 The pull adapter uses an inclusive timestamp and a 100-order maximum. For high-volume bursts, confirm the consumer's pagination behavior; this small-store adapter does not offer a cursor. Provider contract/documentation review is not live account acceptance.
 

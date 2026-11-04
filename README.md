@@ -6,6 +6,36 @@ A small, self-hosted shop for physical products, by [Heartmade Studio](https://h
 
 This initial standalone distribution starts in **local simulation**. Live selling requires your merchant accounts, real product/seller/legal content, configuration and the acceptance checks in [production setup](docs/production.md). Automated tests do not establish that a merchant account is ready to take money.
 
+## Po polsku — prosty sklep, który możesz prowadzić po swojemu
+
+Masz jeden produkt i chcesz sprzedawać go z własnej strony? Heartshop Goods
+łączy płatność PAYMOVE.io z obsługą przesyłek i danych do faktur w Furgonetka.pl.
+Fakturę wystawia sprzedawca w swoim skonfigurowanym module Furgonetki; sam sklep
+jej nie tworzy. To prosty punkt wyjścia, bez koszyka wielu produktów i magazynu.
+
+To projekt open source Heartmade Studio na licencji MIT. Możesz pobrać kod,
+uruchomić przykład lokalnie i dostosować go do swojej działalności. Programistom
+daje niewielki kod PHP/SQLite, testy i opis integracji. Pierwsze uruchomienie jest
+symulacją; przed sprzedażą trzeba przygotować dane sprzedawcy, regulamin, hosting
+i sprawdzić płatności na swoim koncie. Nie ma tu obietnicy gotowego wdrożenia po
+samym sklonowaniu repozytorium.
+
+### Wolisz, żebyśmy skonfigurowali sklep dla Ciebie?
+
+[Zobacz strony i sklepy przygotowywane przez Heartmade](https://heartmade.pl/websites).
+Pomagamy ogarnąć technologię, żeby zostało Ci więcej miejsca na własną pracę.
+Zakres i warunki wdrożenia ustalane są dla konkretnego sklepu. Bezpłatny kod nie
+obejmuje hostingu ani opieki nad uruchomionym sklepem.
+
+### Zobacz lokalny przykład
+
+![Lokalna symulacja sklepu; przykładowa oferta i ilustracja AI](docs/screenshots/storefront.jpg)
+
+[Zobacz również odpowiedź o fakturach](docs/screenshots/invoice-faq.jpg).
+
+Zrzut z lokalnej symulacji, z syntetyczną ofertą. Ilustracja AI nie przedstawia
+rzeczywistego produktu ani gabinetu sprzedawcy. To nie jest zrzut sklepu klienta.
+
 ## Run locally
 
 Requirements: **PHP 8.5** with `curl`, `sqlite3` and `mbstring`. macOS and Linux are supported; on Windows use WSL. No Composer, npm install or database server is required.
@@ -55,6 +85,10 @@ Tests run with synthetic credentials and isolated temporary databases. They cove
 
 ## Documentation and license
 
+- [Merchant indexing and metadata](docs/indexing.md)
+- [Hosting options](docs/hosting.md)
+- [Edition isolation follow-up](docs/edition-isolation.md)
+- [Proposed v0.1.0 notes](docs/releases/v0.1.0-proposal.md)
 - [Architecture and extraction boundaries](docs/architecture.md)
 - [Production setup](docs/production.md)
 - [PAYMOVE and Furgonetka contracts](docs/integrations.md)

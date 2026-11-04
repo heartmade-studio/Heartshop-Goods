@@ -13,11 +13,24 @@ return [
     ],
     // Enable only after completing docs/production.md and replacing all sample content.
     'production_ready' => false,
+    // One indexing switch. Rebuild with php scripts/heartshop/build-storefront.php.
+    // Keep false for demos/staging. See docs/indexing.md before enabling.
+    'indexing' => [
+        'enabled' => false,
+        'origin' => 'https://shop.example.com',
+        'description' => [
+            'pl' => 'Przykładowa oferta sklepu Heartshop. Lokalna symulacja, bez prawdziwej sprzedaży.',
+            'en' => 'Example Heartshop offer. Local simulation without real sales.',
+        ],
+        // Only approved public facts; rendered visibly as well as in structured data.
+        'seller_type' => 'ProfessionalService', // Vouchers: LocalBusiness or ProfessionalService
+        'seller_address' => '', // Public business address, if approved for publication.
+    ],
+
     'product_type' => 'shipping',
     'terms_version' => 'demo-2026-11-03', // Change only with reviewed legal document version.
     // What the shop sells. Each offer has its own pages in <base>/<path> (zamowienie.html, dziekujemy.html).
     // This distribution accepts only shipping offers.
-    //   type 'voucher':  a gift voucher; each unit bought gets its own code, valid for valid_months.
     // Never reuse an offer id for a different product: historical orders keep it.
     'default_offer' => 'magic-box', // pages without data-offer and older open tabs order this one
     'offers' => [
@@ -37,7 +50,6 @@ return [
     ],
     'free_shipping_from' => 15000, // null disables free shipping
     'invoice'            => true,  // show "Faktura na firmę"; Furgonetka issues invoices for shipped orders,
-                                   // the seller issues them for vouchers (marked in the panel)
     'tax_rate'           => 23,    // VAT % for product and shipping; null = seller exempt from VAT
     'paymove' => [
         'trigger_payment' => null, // e.g. 'BLIK' to open that method straight away
