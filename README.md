@@ -10,7 +10,7 @@ A small, self-hosted shop for physical products, by [Heartmade Studio](https://h
 
 This initial standalone distribution starts in **local simulation**. Live selling requires your merchant accounts, real product/seller/legal content, configuration and the acceptance checks in [production setup](docs/production.md). Automated tests do not establish that a merchant account is ready to take money.
 
-## Po polsku — prosty sklep, który możesz prowadzić po swojemu
+## Prosty sklep, który możesz prowadzić po swojemu
 
 Masz jeden produkt i chcesz sprzedawać go z własnej strony? Heartshop Goods
 łączy płatność PAYMOVE.io z panelem klienta Furgonetka.pl. Opłacone zamówienia
