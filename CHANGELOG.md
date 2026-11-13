@@ -27,6 +27,8 @@
   a light surface); buyer-email lookup field no longer uppercased.
 - Orders record whether they were paid in the PAYMOVE sandbox (`testPayment`
   in the status response; voucher mail labelled accordingly).
+- Postcode field renamed (`postal`) so Safari no longer offers passwords on it;
+  PAYMOVE methods listed without fast bank transfers.
 
 No tag or release has been published for this proposal. Provider acceptance and
 merchant deployment are separate from offline regression results.
