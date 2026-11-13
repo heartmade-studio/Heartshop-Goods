@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased — proposed v0.1.0
+## v0.1.0 — 2026-11-13
 
 - Standalone Heartshop Goods with local simulation, PAYMOVE checkout and seller panel.
 - One documented merchant indexing switch; generated canonical, OG, visible
@@ -29,9 +29,6 @@
   in the status response; voucher mail labelled accordingly).
 - Postcode field renamed (`postal`) so Safari no longer offers passwords on it;
   PAYMOVE methods listed without fast bank transfers.
-
-No tag or release has been published for this proposal. Provider acceptance and
-merchant deployment are separate from offline regression results.
 
 ## 2026-11-03 — standalone extraction
 
