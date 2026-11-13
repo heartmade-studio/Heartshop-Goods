@@ -73,7 +73,7 @@ The local simulator is not PAYMOVE sandbox. It checks the application flow witho
 - Durable email outbox with a separate CLI worker.
 - Polish and English storefront; the panel is currently Polish.
 
-No inventory reservation, variant selector, combined multi-product cart, automatic refunds or automatic reconciliation of uncertain payments. Voucher sales are in the separate [Heartshop Vouchers](https://github.com/heartmade-studio/Heartshop-Vouchers) repository. PAYMOVE account fees and Furgonetka services are separate from this code.
+No inventory reservation, variant selector, combined multi-product cart, automatic refunds or automatic reconciliation of payments held for `review`. Lost create responses are recovered under the same `externalId` (see [docs/integrations.md](docs/integrations.md#payment-recovery)). Voucher sales are in the separate [Heartshop Vouchers](https://github.com/heartmade-studio/Heartshop-Vouchers) repository. PAYMOVE account fees and Furgonetka services are separate from this code.
 
 ## Deploy for real transactions
 
