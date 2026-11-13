@@ -23,6 +23,8 @@
 - Mail envelope sender (`-f`) aligned with `MAIL_FROM`.
 - Retried payment creation re-checks the current production gates; the local
   simulator supports cancel → retry → pay on the same order.
+- Seller panel: dark buttons readable again (the shop theme had made `--night`
+  a light surface); buyer-email lookup field no longer uppercased.
 
 No tag or release has been published for this proposal. Provider acceptance and
 merchant deployment are separate from offline regression results.
