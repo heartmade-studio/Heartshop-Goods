@@ -11,5 +11,5 @@ with tempfile.TemporaryDirectory(prefix='heartshop-core-') as temp:
     fixture=Path(temp)/'repo'
     shutil.copytree(ROOT,fixture,ignore=shutil.ignore_patterns('.git','var','private','__pycache__'))
     shutil.copy2(ROOT/'tests/fixtures/core-config.php',fixture/'public/heartshop/api/config.php')
-    for command in [['node','--test','tests/heartshop/frontend.cjs'],['php','tests/heartshop/backend.php'],['php','tests/heartshop/outbox.php'],['python3','tests/heartshop/routes.py'],['python3','tests/heartshop/apache.py']]:
+    for command in [['node','--test','tests/heartshop/frontend.cjs'],['php','tests/heartshop/backend.php'],['php','tests/heartshop/recovery.php'],['php','tests/heartshop/outbox.php'],['python3','tests/heartshop/routes.py'],['python3','tests/heartshop/apache.py']]:
         subprocess.run(command,cwd=fixture,check=True)

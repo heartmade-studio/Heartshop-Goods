@@ -13,6 +13,14 @@
 - PL/EN invoice FAQ describes the merchant's Furgonetka invoice module.
 - README preview of the Furgonetka client panel, where paid orders are processed and invoices are issued.
 - Misleading voucher-service docs removed; coupled core cleanup documented.
+- Payment recovery: a lost PAYMOVE create response is resumed under the same
+  `externalId` with the frozen order; resumed checkouts read the payment status
+  first, signed failed transactions are audited and diagnostics stay data-free.
+- Hosted sandbox PAY links; buyers choose the payment method in PAYMOVE Checkout;
+  checkout links the previous order's status after an error.
+- Buyer text hardening: control and bidi-override characters removed; names reject
+  links so shop mail cannot carry phishing text.
+- Mail envelope sender (`-f`) aligned with `MAIL_FROM`.
 
 No tag or release has been published for this proposal. Provider acceptance and
 merchant deployment are separate from offline regression results.

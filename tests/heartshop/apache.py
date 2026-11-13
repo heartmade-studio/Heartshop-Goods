@@ -48,7 +48,7 @@ def check(extra=None):
             (site / 'api').mkdir()
             (site / 'zamowienie.html').write_text('synthetic checkout')
             (site / 'assets/checkout.js').write_text('// synthetic asset')
-            for name in ['config', 'lib', 'vouchers', 'panel-lib', 'future-private-helper']:
+            for name in ['config', 'lib', 'paymove', 'vouchers', 'panel-lib', 'future-private-helper']:
                 (site / f'api/{name}.php').write_text('MUST NOT BE SERVED')
             (site / 'api/panel.php').write_text('reviewed entry point')
         cert, key = base / 'cert.pem', base / 'key.pem'
@@ -141,7 +141,7 @@ DocumentRoot "{web}"
                     assert "frame-ancestors 'none'" in response.headers['Content-Security-Policy']
             with get(f'https://127.0.0.1:{https}/heartshop/api/panel.php') as response:
                 assert response.status == 200, response.status
-            for name in ['config', 'lib', 'vouchers', 'panel-lib', 'future-private-helper']:
+            for name in ['config', 'lib', 'paymove', 'vouchers', 'panel-lib', 'future-private-helper']:
                 with get(f'https://127.0.0.1:{https}/heartshop/api/{name}.php') as response:
                     assert response.status == 403, (name, response.status)
                     assert b'MUST NOT BE SERVED' not in response.read()
