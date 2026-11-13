@@ -25,6 +25,8 @@
   simulator supports cancel → retry → pay on the same order.
 - Seller panel: dark buttons readable again (the shop theme had made `--night`
   a light surface); buyer-email lookup field no longer uppercased.
+- Orders record whether they were paid in the PAYMOVE sandbox (`testPayment`
+  in the status response; voucher mail labelled accordingly).
 
 No tag or release has been published for this proposal. Provider acceptance and
 merchant deployment are separate from offline regression results.

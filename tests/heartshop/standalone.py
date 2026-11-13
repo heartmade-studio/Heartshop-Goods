@@ -53,7 +53,7 @@ with tempfile.TemporaryDirectory(prefix='heartshop-standalone-') as temp:
         assert request('/__dev/settle',{'orderId':order['orderId']}, {'Origin':'http://attacker.invalid'})[0]==403
         assert request('/__dev/settle',{'orderId':order['orderId']})[1]['status']=='paid'
         status=request('/heartshop/api/status.php?o='+order['orderId'])[1]
-        assert status['status']=='paid' and status['demo'] is True and status['type']==typ
+        assert status['status']=='paid' and status['demo'] is True and status['testPayment'] is True and status['type']==typ
         if KIND=='vouchers':
             assert len(status['vouchers'])==1
             assert request('/heartshop/twoj-voucher.html?o='+order['orderId'])[0]==200
@@ -103,7 +103,7 @@ catch(CheckoutProblem $e){echo json_encode(['calls'=>$calls,'error'=>$e->reason,
     p.write_text(original.replace("'demo'    => true","'demo'    => false").replace("'demo'         => true","'demo'         => false"))
     a=production('e');assert a['error']=='demo_only' and a['calls']==0
     p.write_text(p.read_text().replace("'production_ready' => false","'production_ready' => true"))
-    a=production('f');assert a['calls']==1 and a['order']['data']['snapshot']['demo'] is False
+    a=production('f');assert a['calls']==1 and a['order']['data']['snapshot']['demo'] is False and a['order']['data']['snapshot']['test_payment'] is False
     assert a['order']['offer_type']==typ
     print('PASS production gates: default denied, each independent gate denied, configured real offer accepted with stub provider')
     # A recovered retry re-checks the CURRENT gates before creating a payment.
