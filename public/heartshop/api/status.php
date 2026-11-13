@@ -24,12 +24,11 @@ try {
     // The order id in the link is the bearer token for its vouchers; only a paid order has codes.
     if ($out['type'] === 'voucher' && $order['status'] === 'paid') {
         $out += [
-            'buyerEmail'  => $d['email'],
             'product'    => $d['snapshot']['name'],
             'recipient'  => $d['recipient'] ?? '',
             'dedication' => $d['dedication'] ?? '',
             'seller'     => cfg()['shop']['seller'] ?? '',
-            'vouchers'   => array_map(fn($v) => ['status' => $v['status'],
+            'vouchers'   => array_map(fn($v) => ['code' => $v['code'], 'status' => $v['status'],
                 'expires' => formatDate((int)$v['expires_at'])], vouchersFor($order['external_id'])),
         ];
     }

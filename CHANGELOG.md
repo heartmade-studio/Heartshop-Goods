@@ -21,6 +21,8 @@
 - Buyer text hardening: control and bidi-override characters removed; names reject
   links so shop mail cannot carry phishing text.
 - Mail envelope sender (`-f`) aligned with `MAIL_FROM`.
+- Retried payment creation re-checks the current production gates; the local
+  simulator supports cancel → retry → pay on the same order.
 
 No tag or release has been published for this proposal. Provider acceptance and
 merchant deployment are separate from offline regression results.
