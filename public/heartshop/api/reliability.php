@@ -9,6 +9,21 @@ function reliabilitySchema(SQLite3 $db): void {
         status TEXT NOT NULL, updated_at INTEGER NOT NULL,
         PRIMARY KEY(order_external_id,provider_order_id)
     )');
+    $db->exec('CREATE TABLE IF NOT EXISTS signed_completions (
+        scope TEXT NOT NULL, provider_id TEXT NOT NULL, price INTEGER NOT NULL,
+        method TEXT, received_at INTEGER NOT NULL, matched_order TEXT,
+        PRIMARY KEY(scope,provider_id)
+    )');
+    // Completed refunds by refunded transaction, kept even when no order is paid yet:
+    // a payment completion delivered after its own refund must never fulfil.
+    $db->exec('CREATE TABLE IF NOT EXISTS refunded_transactions (
+        scope TEXT NOT NULL, parent_order_id TEXT NOT NULL, refund_order_id TEXT NOT NULL,
+        external_id TEXT NOT NULL, received_at INTEGER NOT NULL,
+        PRIMARY KEY(scope,parent_order_id)
+    )');
+    $db->exec('CREATE TABLE IF NOT EXISTS confirmation_checks (
+        order_id TEXT PRIMARY KEY, next_at INTEGER NOT NULL DEFAULT 0
+    )');
     $db->exec('CREATE TABLE IF NOT EXISTS mail_outbox (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         order_external_id TEXT NOT NULL,
@@ -28,20 +43,124 @@ function reliabilitySchema(SQLite3 $db): void {
     $db->exec('CREATE INDEX IF NOT EXISTS mail_outbox_due ON mail_outbox(status,next_attempt_at,lease_until,id)');
 }
 
+// Legacy orders have no recorded redirect and use their creation time.
+const CONFIRMATION_ACTIVITY = 'max(o.created_at,coalesce(o.payment_link_served_at,o.created_at))';
+const CONFIRMATION_WINDOW = 'c.scope=json_extract(o.data,"$.snapshot.payment_scope")
+    AND '.CONFIRMATION_ACTIVITY.' >= unixepoch()-86400
+    AND c.received_at BETWEEN '.CONFIRMATION_ACTIVITY.' AND unixepoch()';
+const CONFIRMATION_CANDIDATE = 'SELECT 1 FROM orders o JOIN signed_completions c ON '.CONFIRMATION_WINDOW.'
+    WHERE o.external_id=:id AND o.status IN ("pending","canceled")
+    AND (c.matched_order IS NULL OR c.matched_order=:id)';
+
+// PAYMOVE can omit the merchant externalId. Retain only authenticated completion fields.
+// Queue the existing orders in this payment scope once. Their provider-issued checkout
+// URLs determine the transaction identity; two equal totals never establish a match.
+function recordSignedCompletion(array $event): void {
+    $id=$event['orderId'] ?? null;
+    $price=$event['price'] ?? null;
+    if (!is_string($id) || !preg_match('/^[A-Za-z0-9_-]{1,128}$/D',$id)
+        || (!is_int($price) && !is_string($price)) || !preg_match('/^[0-9]{1,12}$/D',(string)$price)
+        || !is_string($event['paymentMethod'] ?? '')) throw new InvalidArgumentException('Invalid completion');
+    $db=db();
+    $scope=paymentScope();
+    $db->exec('BEGIN IMMEDIATE');
+    try {
+        $q=$db->prepare('INSERT OR IGNORE INTO signed_completions(scope,provider_id,price,method,received_at,matched_order)
+            VALUES(:scope,:id,:price,:method,:now,(SELECT external_id FROM orders
+                WHERE status="paid" AND paymove_order_id=:id AND json_extract(data,"$.snapshot.payment_scope")=:scope))');
+        $q->bindValue(':scope',$scope); $q->bindValue(':id',$id); $q->bindValue(':price',(int)$price,SQLITE3_INTEGER);
+        $q->bindValue(':method',$event['paymentMethod'] ?? ''); $q->bindValue(':now',time(),SQLITE3_INTEGER); $q->execute();
+        if ($db->changes()) {
+            $q=$db->prepare('INSERT OR IGNORE INTO confirmation_checks(order_id)
+                SELECT o.external_id FROM orders o JOIN signed_completions c ON '.CONFIRMATION_WINDOW.'
+                WHERE o.status IN ("pending","canceled") AND c.scope=:scope AND c.provider_id=:provider
+                AND c.matched_order IS NULL');
+            $q->bindValue(':scope',$scope); $q->bindValue(':provider',$id); $q->execute();
+        }
+        $db->exec('COMMIT');
+    } catch (Throwable $e) { $db->exec('ROLLBACK'); throw $e; }
+}
+
+function checkSignedCompletion(string $id, ?callable $lookup=null, bool $forDisplay=false): void {
+    $db=db();
+    $now=time();
+    // Drop exhausted candidates atomically. A later event can enqueue the order again.
+    $q=$db->prepare('DELETE FROM confirmation_checks WHERE order_id=:id AND NOT EXISTS ('.CONFIRMATION_CANDIDATE.')');
+    $q->bindValue(':id',$id); $q->execute();
+    $q=$db->prepare('UPDATE confirmation_checks SET next_at=:later WHERE order_id=:id');
+    $q->bindValue(':later',$now+60,SQLITE3_INTEGER); $q->bindValue(':id',$id); $q->execute();
+    $queued=$db->changes()===1;
+    if (!$queued && !$forDisplay) return;
+    $order=findOrder($id);
+    $scope=paymentScope();
+    if (!$order || !in_array($order['status'],['pending','canceled'],true) || $order['payment_state']!=='ready'
+        || !$order['payment_url'] || ($order['data']['snapshot']['payment_scope']??$scope)!==$scope) return;
+
+    $seen=refreshPaymentObservation($order,$now,$lookup);
+    if (!$queued || ($seen['status']??null)!=='COMPLETED' || empty($seen['orderId'])) return;
+    $q=$db->prepare('UPDATE signed_completions AS c SET matched_order=:id WHERE scope=:scope AND provider_id=:provider
+        AND (matched_order IS NULL OR matched_order=:id) AND EXISTS (
+            SELECT 1 FROM orders o WHERE o.external_id=:id AND o.status IN ("pending","canceled") AND '.CONFIRMATION_WINDOW.')
+        RETURNING provider_id,price,method');
+    $q->bindValue(':scope',$scope); $q->bindValue(':provider',$seen['orderId']); $q->bindValue(':id',$id);
+    $result=$q->execute(); $signed=$result->fetchArray(SQLITE3_ASSOC); $result->finalize(); $q->close();
+    if ($signed) {
+        applyPaymentEvent(['externalId'=>$id,'orderId'=>$signed['provider_id'],'status'=>'COMPLETED',
+            'price'=>$signed['price'],'paymentMethod'=>$signed['method']]);
+    }
+}
+
+function refreshPaymentObservation(array $order, int $now, ?callable $lookup): ?array {
+    $db=db();
+    $id=$order['external_id'];
+    // A status poll and the worker share one provider read per order per minute.
+    $q=$db->prepare('UPDATE orders SET status_check_after=:later WHERE external_id=:id AND status_check_after<=:now');
+    $q->bindValue(':later',$now+60,SQLITE3_INTEGER); $q->bindValue(':now',$now,SQLITE3_INTEGER); $q->bindValue(':id',$id);
+    $q->execute();
+    if (!$db->changes() || !consumeLimits(['confirmation_status'=>400],$now)) return null;
+    $seen=($lookup ?? 'paymovePaymentStatus')($order['payment_url']);
+    $status=$seen['status']??null;
+    $hint=['status'=>$status,'order_id'=>paymentConfirming($status)?($seen['orderId']??null):null,'at'=>$now];
+    // A checkout or signed event that changed the order while HTTP was in flight wins.
+    $q=$db->prepare('UPDATE orders SET data=json_set(data,"$.payment_observation",json(:hint))
+        WHERE external_id=:id AND status=:status AND json_extract(data,"$.payment_observation.at") IS :previous
+        AND payment_link_served_at IS :served
+        AND status_check_after=:later');
+    $q->bindValue(':hint',json_encode($hint,JSON_THROW_ON_ERROR)); $q->bindValue(':id',$id);
+    $q->bindValue(':status',$order['status']); $q->bindValue(':later',$now+60,SQLITE3_INTEGER);
+    $q->bindValue(':served',$order['payment_link_served_at'],$order['payment_link_served_at']===null?SQLITE3_NULL:SQLITE3_INTEGER);
+    $previous=$order['data']['payment_observation']['at']??null;
+    $q->bindValue(':previous',$previous,$previous===null?SQLITE3_NULL:SQLITE3_INTEGER);
+    $q->execute();
+
+    return $seen;
+}
+
 // Orders created before typed offers have no type: they were all shipped products.
 function orderType(array $data): string {
     return $data['snapshot']['type'] ?? 'shipping';
 }
 
+function paymentConfirming(?string $status): bool {
+    return in_array($status,['PENDING','WAITING_FOR_EXTERNAL_ACTION','COMPLETED'],true);
+}
+
+function paymentResumable(?string $status): bool {
+    return in_array($status,['INITIALIZED','CANCELED','ERROR'],true);
+}
+
 function orderDisplayStatus(array $order): string {
-    if ($order['status']==='canceled' && in_array($order['data']['payment_observation']['status']??null,
-        ['PENDING','WAITING_FOR_EXTERNAL_ACTION','COMPLETED'],true)) return 'pending';
+    if (in_array($order['status'],['pending','canceled'],true)
+        && paymentConfirming($order['data']['payment_observation']['status']??null)) return 'confirming';
     return $order['status'];
 }
 
 function canRecheckPayment(array $order, ?int $now = null): bool {
+    $observation=$order['data']['payment_observation']??[];
     return in_array($order['status'],['pending','canceled'],true) && $order['payment_state']==='ready'
-        && ($now??time())-(int)($order['data']['payment_observation']['at']??$order['created_at'])>=45;
+        && (!isset($order['data']['snapshot']['payment_scope']) || $order['data']['snapshot']['payment_scope']===paymentScope())
+        && paymentResumable($observation['status']??null)
+        && ($observation['at']??0)>($now??time())-60;
 }
 
 function applyPaymentEvent(array $event): array {
@@ -93,16 +212,37 @@ function applyPaymentEvent(array $event): array {
             if (trim($event['orderId']??'')==='' || (ltrim((string)$price,'0') ?: '0') !== (string)$order['total'] ||
                 (!empty($order['paymove_order_id']) && ($event['orderId']??null)!==$order['paymove_order_id'] && !$failedBinding)) { $target='review'; $review=true; }
             else { $target='paid'; $paidAt=time(); }
+            $refunded=$db->prepare('SELECT refund_order_id FROM refunded_transactions WHERE scope=:scope AND parent_order_id=:provider');
+            $refunded->bindValue(':scope',$order['data']['snapshot']['payment_scope'] ?? paymentScope());
+            $refunded->bindValue(':provider',trim($event['orderId']??''));
+            $refundId=$refunded->execute()->fetchArray(SQLITE3_NUM)[0] ?? null;
+            if ($refundId!==null) { $target='refunded'; $paidAt=null; $review=false; }
         } elseif (in_array($incoming,['CANCELED','ERROR'],true) && $status==='pending') {
             $target='canceled';
         }
         $stmt=$db->prepare('UPDATE orders SET status=:status, paid_at=CASE WHEN :paid IS NULL THEN paid_at ELSE :paid END,
             payment_method=COALESCE(:method,payment_method), paymove_order_id=CASE WHEN :paid IS NOT NULL THEN :pm ELSE paymove_order_id END,
-            data=json_remove(data,"$.payment_observation") WHERE external_id=:id AND status=:old');
-        $stmt->bindValue(':status',$target); $stmt->bindValue(':paid',$paidAt, $paidAt===null?SQLITE3_NULL:SQLITE3_INTEGER); $stmt->bindValue(':method',$event['paymentMethod']??null,isset($event['paymentMethod'])?SQLITE3_TEXT:SQLITE3_NULL); $stmt->bindValue(':pm',$event['orderId']??null,isset($event['orderId'])?SQLITE3_TEXT:SQLITE3_NULL); $stmt->bindValue(':id',$event['externalId']); $stmt->bindValue(':old',$status); $stmt->execute();
+            data=CASE WHEN :refund IS NULL THEN json_remove(data,"$.payment_observation")
+                ELSE json_set(json_remove(data,"$.payment_observation"),"$.refund",json(:refund)) END
+            WHERE external_id=:id AND status=:old');
+        $stmt->bindValue(':status',$target); $stmt->bindValue(':paid',$paidAt, $paidAt===null?SQLITE3_NULL:SQLITE3_INTEGER); $stmt->bindValue(':method',$event['paymentMethod']??null,isset($event['paymentMethod'])?SQLITE3_TEXT:SQLITE3_NULL); $stmt->bindValue(':pm',$event['orderId']??null,isset($event['orderId'])?SQLITE3_TEXT:SQLITE3_NULL); $stmt->bindValue(':id',$event['externalId']); $stmt->bindValue(':old',$status);
+        $refund=$target==='refunded' ? ['order_id'=>$refundId,'parent_order_id'=>$event['orderId'],'at'=>time()] : null;
+        $stmt->bindValue(':refund',$refund===null?null:json_encode($refund,JSON_THROW_ON_ERROR),$refund===null?SQLITE3_NULL:SQLITE3_TEXT);
+        $stmt->execute();
         $changed=$db->changes()===1;
+        if ($changed && $target==='refunded') {
+            foreach (refundNotices($order,$refund) as $message) queueMail($db,$event['externalId'],$message);
+        }
         if ($changed && in_array($target,['paid','review'],true) && in_array($status,['pending','canceled'],true)) {
             $updated=findOrder($event['externalId']);
+            if ($target==='paid') {
+                $match=$db->prepare('UPDATE signed_completions SET matched_order=:id WHERE provider_id=:provider
+                    AND scope=:scope AND matched_order IS NULL');
+                $match->bindValue(':id',$order['external_id']);
+                $match->bindValue(':provider',$event['orderId']);
+                $match->bindValue(':scope',$order['data']['snapshot']['payment_scope'] ?? '');
+                $match->execute();
+            }
             // Codes exist only for a confirmed payment; a review order gets them after manual reconciliation.
             if ($target==='paid' && orderType($updated['data'])==='voucher') issueVouchers($db,$updated);
             $messages=paymentNotices($updated,$target,$event);
@@ -111,6 +251,72 @@ function applyPaymentEvent(array $event): array {
         $db->exec('COMMIT');
         $result=findOrder($event['externalId']); return ['status'=>$result['status'],'changed'=>$changed];
     } catch(Throwable $e) { try{$db->exec('ROLLBACK');}catch(Throwable){} throw $e; }
+}
+
+// PAYMOVE refunds are always full and name the refunded payment in parentOrderId. A completed
+// refund of the transaction that paid an order withdraws it: its voucher codes stop redeeming and
+// it leaves the Furgonetka export. A refund of any other transaction (a duplicate payment) changes nothing.
+function applyRefundEvent(array $event): array {
+    foreach (['externalId','orderId','parentOrderId','status'] as $key) {
+        if (!is_string($event[$key] ?? null) || strlen($event[$key])>128) throw new InvalidArgumentException('Invalid refund event');
+    }
+    if ($event['status']!=='COMPLETED' || $event['parentOrderId']==='') return ['status'=>'ignored','changed'=>false];
+    $db=db(); $db->exec('BEGIN IMMEDIATE');
+    try {
+        $r=$db->prepare('INSERT OR IGNORE INTO refunded_transactions(scope,parent_order_id,refund_order_id,external_id,received_at)
+            VALUES(:scope,:parent,:refund,:id,:now)');
+        $r->bindValue(':scope',paymentScope()); $r->bindValue(':parent',$event['parentOrderId']);
+        $r->bindValue(':refund',$event['orderId']); $r->bindValue(':id',$event['externalId']);
+        $r->bindValue(':now',time(),SQLITE3_INTEGER); $r->execute();
+        // A paid order is withdrawn only by a refund of its bound paying transaction, never of a
+        // duplicate payment. A review order has no binding; its signed completions identify it.
+        // The merchant externalId can be empty; the transaction alone then identifies one order.
+        $q=$db->prepare('SELECT external_id FROM orders o WHERE (:id="" OR external_id=:id)
+            AND ((status="paid" AND paymove_order_id=:parent) OR (status="review" AND (paymove_order_id=:parent
+                OR EXISTS (SELECT 1 FROM payment_transactions t
+                    WHERE t.order_external_id=o.external_id AND t.provider_order_id=:parent AND t.status="COMPLETED"))))
+            LIMIT 2');
+        $q->bindValue(':id',$event['externalId']); $q->bindValue(':parent',$event['parentOrderId']);
+        $res=$q->execute(); $ids=[];
+        while ($row=$res->fetchArray(SQLITE3_ASSOC)) $ids[]=$row['external_id'];
+        $res->finalize();
+        if (count($ids)!==1) {
+            $db->exec('COMMIT');
+            $known=$event['externalId']!=='' ? findOrder($event['externalId']) : null;
+            return ['status'=>$known['status'] ?? 'ignored','changed'=>false];
+        }
+        $order=findOrder($ids[0]);
+        $refund=['order_id'=>$event['orderId'],'parent_order_id'=>$event['parentOrderId'],'at'=>time()];
+        $u=$db->prepare('UPDATE orders SET status="refunded", data=json_set(data,"$.refund",json(:refund))
+            WHERE external_id=:id AND status=:old');
+        $u->bindValue(':refund',json_encode($refund,JSON_THROW_ON_ERROR)); $u->bindValue(':id',$order['external_id']);
+        $u->bindValue(':old',$order['status']); $u->execute();
+        $changed=$db->changes()===1;
+        if ($changed) foreach (refundNotices($order,$refund) as $message) queueMail($db,$order['external_id'],$message);
+        $db->exec('COMMIT');
+        return ['status'=>'refunded','changed'=>$changed];
+    } catch(Throwable $e) { try{$db->exec('ROLLBACK');}catch(Throwable){} throw $e; }
+}
+
+/** The merchant's notice that a paid order was withdrawn by a refund. $order is the state before it. */
+function refundNotices(array $order, array $refund): array {
+    $merchant=(string)(secrets()['MERCHANT_EMAIL']??'');
+    if ($merchant==='') return [];
+    if (orderType($order['data'])==='voucher') {
+        $codes=array_map(fn($v)=>"{$v['code']}".($v['status']==='used' ? ' (był już wykorzystany)' : ''),vouchersFor($order['external_id']));
+        $what=$codes ? "Kody voucherów z tego zamówienia są unieważnione — panel nie pozwoli ich zrealizować.\nKody: ".implode(', ',$codes)
+            : "Płatność potwierdzono dopiero po zwrocie, więc vouchery nie zostały wydane.";
+    } elseif (!in_array($order['status'],['paid','review'],true)) {
+        $what="Płatność potwierdzono dopiero po zwrocie, więc zamówienie nie trafi do Furgonetki. Nie wysyłaj towaru.";
+    } else {
+        $what="Zamówienie zniknęło z eksportu do Furgonetki. Jeśli paczka została już przygotowana lub nadana"
+            .(!empty($order['tracking_number']) ? " (nr przesyłki {$order['tracking_number']})" : '')
+            .", zatrzymaj ją albo uzgodnij z kupującym zwrot towaru.";
+    }
+    return [[$merchant,"Zwrot płatności {$order['number']}",
+        "PAYMOVE potwierdził zwrot płatności za zamówienie {$order['number']}. $what\n\n"
+        ."ID zwrotu Paymove: {$refund['order_id']} (płatność {$refund['parent_order_id']})\n\n".orderSummary($order),
+        (string)($order['data']['email'] ?? '') ?: null]];
 }
 
 /** $message is [recipient, subject, body, reply-to]. The caller owns any surrounding transaction. */
@@ -163,7 +369,7 @@ function voucherNotices(array $order,string $first,string $summary,string $payme
     $q=$order['data']['snapshot']; $codes=vouchersFor($order['external_id']);
     $list=implode("\n",array_map(fn($v,$i)=>"Voucher ".($i+1)." · nr {$v['code']} · ważny do ".formatDate((int)$v['expires_at']),$codes,array_keys($codes)));
     $messages=[[(string)$order['data']['email'],(count($codes)>1 ? 'Twoje vouchery' : 'Twój voucher')." — {$q['name']}",
-        voucherBuyerMail($order,$first,$list)."\n\n$summary\n\nPytania? Po prostu odpowiedz na tę wiadomość.".($seller!=='' ? "\n\n$seller" : ''),
+        voucherBuyerMail($order,$first,$list).(($q['invoice_request_text'] ?? '')!=='' ? "\n\n".$q['invoice_request_text'] : '')."\n\n$summary\n\nPytania? Po prostu odpowiedz na tę wiadomość.".($seller!=='' ? "\n\n$seller" : ''),
         $merchant!=='' ? $merchant : null]];
     if ($merchant!=='') $messages[]=[$merchant,"Nowy opłacony voucher {$order['number']} — ".formatPln((int)$order['total']),
         "Opłacone zamówienie".($order['payment_method'] ? " ({$order['payment_method']})" : '').".\n\nE-mail kupującego: {$order['data']['email']}\nVouchery:\n$list\n\n$summary\n\n$payment",
@@ -183,7 +389,8 @@ function voucherBuyerMail(array $order,string $first,string $list): string {
         : ($test ? 'To voucher z płatności testowej — nie uprawnia do usługi. ' : 'dziękujemy! Płatność dotarła. ');
     return "Cześć $first,\n\n$intro\nE-mail kupującego do rezerwacji: {$order['data']['email']}\n\n$list\n\n"
         ."Voucher do wydruku lub wysłania dalej:\n".voucherPageUrl($order)."\n\n"
-        .($demo || $test ? "To wyłącznie przykład sposobu działania vouchera." : "Przy umawianiu terminu podaj adres e-mail kupującego.");
+        .($demo || $test ? "To wyłącznie przykład sposobu działania vouchera." : "Przy umawianiu terminu podaj adres e-mail kupującego.")
+        .((cfg()['voucher_contact'] ?? '')!=='' ? "\n".cfg()['voucher_contact'] : '');
 }
 
 function processMailQueue(?callable $sender=null,int $limit=20): array {

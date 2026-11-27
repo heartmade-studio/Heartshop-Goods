@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import socket
+import sqlite3
 import subprocess
 import tempfile
 import time
@@ -20,7 +21,7 @@ with tempfile.TemporaryDirectory(prefix='heartshop-http-', dir=scratch) as tmp:
     envfile = private/'.env'
     panel_hash = subprocess.check_output(['php', str(ROOT/'scripts/heartshop/panel-password.php')], input=b'synthetic-panel-pass\n').decode().strip()
     assert panel_hash.startswith('PANEL_PASSWORD_HASH=$')
-    envfile.write_text('PAYMOVE_API_KEY=synthetic-only\nPAYMOVE_PRODUCT_ID=fixture\nPAYMOVE_WEBHOOK_SECRET=synthetic-signing-only\nMAIL_FROM=shop@example.invalid\nMERCHANT_EMAIL=merchant@example.invalid\nSHOP_ORIGIN=https://staging.shop.example.com\nFURGONETKA_TOKEN='+'f'*32+'\n'+panel_hash+'\n')
+    envfile.write_text('PAYMOVE_API_KEY=synthetic-only\nPAYMOVE_PRODUCT_ID=fixture\nPAYMOVE_WEBHOOK_SECRET=synthetic-signing-only\nPAYMOVE_TRANSACTION_SECRET=synthetic-transaction\nMAIL_FROM=shop@example.invalid\nMERCHANT_EMAIL=merchant@example.invalid\nSHOP_ORIGIN=https://staging.shop.example.com\nFURGONETKA_TOKEN='+'f'*32+'\n'+panel_hash+'\n')
     envfile.chmod(0o600)
     env = dict(os.environ, HEARTSHOP_ENV_FILE=str(envfile))
     fixture = private/'seed.php'
@@ -34,11 +35,26 @@ $db=db();$db->exec("UPDATE orders SET data=json_set(data, '$.snapshot.demo', jso
 echo json_encode(['input'=>$input,'result'=>$result,'voucher'=>$voucher]);
 ''')
     seeded = json.loads(subprocess.check_output(['php', str(fixture), str(ROOT)], env=env))
+    # Substitute only the provider status lookup in the PHP route. The web
+    # server also disables outbound cURL so a broken fixture cannot call PAYMOVE.
+    provider_state = private/'provider.json'
+    provider_state.write_text(json.dumps({'status': 'CANCELED', 'orderId': 'fixture-failed'}))
+    prepend = private/'provider.php'
+    prepend.write_text("""<?php
+$statusLookup=function(string $url): array {
+    return json_decode(file_get_contents(__DIR__.'/provider.json'),true,flags:JSON_THROW_ON_ERROR);
+};
+""")
+    def next_observation(order_id, status, provider='fixture-pm'):
+        provider_state.write_text(json.dumps({'status': status, 'orderId': provider}))
+        with sqlite3.connect(private/'orders.sqlite') as db:
+            db.execute('UPDATE orders SET status_check_after=0 WHERE external_id=?', (order_id,))
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0))
         port = sock.getsockname()[1]
     with (private/'php.log').open('w') as log:
-        proc = subprocess.Popen(['php', '-d', 'sendmail_path=/usr/bin/false', '-S', f'127.0.0.1:{port}', '-t', str(ROOT/'public')], env=env, stdout=log, stderr=log)
+        proc = subprocess.Popen(['php', '-d', 'sendmail_path=/usr/bin/false', '-d', 'disable_functions=curl_exec',
+                                 '-d', f'auto_prepend_file={prepend}', '-S', f'127.0.0.1:{port}', '-t', str(ROOT/'public')], env=env, stdout=log, stderr=log)
         def request(path, data=None, headers=None):
             req = urllib.request.Request(f'http://127.0.0.1:{port}/heartshop/api/{path}', data=data, headers=headers or {})
             try:
@@ -47,10 +63,10 @@ echo json_encode(['input'=>$input,'result'=>$result,'voucher'=>$voucher]);
                 response = e
             with response:
                 return response.status, json.loads(response.read()), response.headers
-        def event(status, price, order=None, provider='fixture-pm'):
-            raw = json.dumps({'externalId': order or seeded['result']['orderId'], 'status': status, 'price': price, 'orderId': provider}).encode()
+        def event(status, price, order=None, provider='fixture-pm', secret=b'synthetic-signing-only', **fields):
+            raw = json.dumps({'externalId': seeded['result']['orderId'] if order is None else order, 'status': status, 'price': price, 'orderId': provider, **fields}).encode()
             stamp = str(int(time.time()))
-            signature = base64.b64encode(hmac.new(b'synthetic-signing-only', stamp.encode()+b'.'+raw, hashlib.sha256).digest()).decode()
+            signature = base64.b64encode(hmac.new(secret, stamp.encode()+b'.'+raw, hashlib.sha256).digest()).decode()
             return request('webhook.php', raw, {'X-Paymove-Signature': f't={stamp},v1={signature}'})
         try:
             for _ in range(100):
@@ -77,15 +93,13 @@ echo json_encode(['input'=>$input,'result'=>$result,'voucher'=>$voucher]);
             assert request('furgonetka.php?route=orders')[0] == 401
             assert event('ERROR', 0, provider='fixture-failed')[1]['status'] == 'canceled'
             assert request('status.php?o='+seeded['result']['orderId'])[1]['status'] == 'canceled'
-            # Model the unsigned PENDING observation from resuming that same purchase.
-            hint = private/'hint.php'
-            hint.write_text('''<?php
-$_SERVER['DOCUMENT_ROOT']=$argv[1];require $argv[1].'/public/heartshop/api/lib.php';
-$s=db()->prepare('UPDATE orders SET data=json_set(data,"$.payment_observation",json(:hint)) WHERE external_id=:id');
-$s->bindValue(':hint',json_encode(['status'=>'PENDING','order_id'=>'fixture-pm']));$s->bindValue(':id',$argv[2]);$s->execute();
-''')
-            subprocess.check_call(['php',str(hint),str(ROOT),seeded['result']['orderId']],env=env)
-            assert request('status.php?o='+seeded['result']['orderId'])[1]['status'] == 'pending'
+            # The unsigned PENDING observation from resuming that same purchase.
+            next_observation(seeded['result']['orderId'], 'PENDING')
+            canceled = request('status.php?o='+seeded['result']['orderId'])[1]
+            assert canceled['status'] == 'confirming' and canceled['resumeAvailable'] is False
+            transaction = dict(secret=b'synthetic-transaction', currency='PLN')
+            assert event('COMPLETED', 0, type='CHARGEBACK', **transaction)[0] == 400
+            assert event('COMPLETED', 0, type='PAYMENT', amountMinor='1', **dict(transaction, currency='EUR'))[0] == 400
             # A new signed provider transaction ID for the same failed purchase is valid.
             assert event('COMPLETED', seeded['result']['total'])[1]['status'] == 'paid'
             assert event('COMPLETED', seeded['result']['total'])[1]['changed'] is False
@@ -158,6 +172,20 @@ echo json_encode($r);
             assert code == 200 and len(exported) == 1
             assert request('status.php?o='+seeded['result']['orderId'])[1]['offer'] == '1'
             print('PASS example box identified correctly and excluded from fulfillment; old offer preserved')
+            # A signed refund of the paying transaction withdraws the parcel from Furgonetka.
+            shipped = seeded['result']['orderId']
+            refund = dict(transaction, provider='fixture-pm-r1', type='REFUND')
+            assert event('COMPLETED', 0, shipped, parentOrderId='fixture-failed', **refund)[1] == {'status': 'paid', 'changed': False}
+            assert event('COMPLETED', 0, shipped, parentOrderId='fixture-pm', **refund)[1] == {'status': 'refunded', 'changed': True}
+            assert request('status.php?o='+shipped)[1]['status'] == 'refunded'
+            code, exported, _ = request('furgonetka.php?route=orders', headers={'Authorization': 'Bearer '+'f'*32})
+            assert code == 200 and exported == []
+            assert request('furgonetka.php?route=orders/HS-1001/tracking_number', json.dumps({'tracking': {'number': 'X1'}}).encode(),
+                           {'Authorization': 'Bearer '+'f'*32, 'Content-Type': 'application/json'})[0] == 404
+            with sqlite3.connect(private/'orders.sqlite') as db:
+                subject, body = db.execute('SELECT subject, body FROM mail_outbox WHERE order_external_id=? ORDER BY id DESC LIMIT 1', (shipped,)).fetchone()
+                assert subject.startswith('Zwrot płatności') and 'Furgonetki' in body
+            print('PASS signed refund withdraws a paid parcel from the Furgonetka export and alerts the seller')
             prod = private/'prod'
             prod.mkdir(mode=0o700)
             prod_env = prod/'.env'

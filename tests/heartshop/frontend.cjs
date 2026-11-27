@@ -339,7 +339,7 @@ test('a resumed canceled order keeps polling until the late paid webhook arrives
   const p=await bound(storage(),orderA),scheduled=[];
   const thanks=page('dziekujemy.html',p.store);thanks.context.location.search='?o='+orderA;
   thanks.context.setTimeout=(callback,delay)=>scheduled.push([callback,delay]);
-  thanks.context.fetch=async()=>({ok:true,json:async()=>({...order,status:'canceled'})});
+  thanks.context.fetch=async()=>({ok:true,json:async()=>({...order,status:'canceled',resumeAvailable:true})});
   thanks.run('attempt.js');thanks.run('thanks.js');
   await new Promise(setImmediate);
   assert.equal(scheduled.length,1);assert.equal(scheduled[0][1],2000);
@@ -353,12 +353,38 @@ test('canceled polling uses the same backoff after 45 seconds',async()=>{
   const p=page('dziekujemy.html'),scheduled=[];let clock=0;
   p.context.Date=class extends Date {static now(){return clock;}};
   p.context.setTimeout=(fn,delay)=>scheduled.push([fn,delay]);
-  p.context.fetch=async()=>({ok:true,json:async()=>({...order,status:'canceled'})});
+  p.context.fetch=async()=>({ok:true,json:async()=>({...order,status:'canceled',resumeAvailable:true})});
   p.run('attempt.js');p.run('thanks.js');await new Promise(setImmediate);
   assert.equal(scheduled[0][1],2000);
   clock=46000;await scheduled[0][0]();
   assert.equal(scheduled[1][1],10000);
   assert.match(p.element('text').textContent,/Nie rozpoczynaj nowej płatności/);
+});
+test('confirming hides a previously visible resume action and polls until the order is paid',async()=>{
+  for (const lang of ['pl','en']) {
+    const owner=await bound(storage(),orderA), p=page('dziekujemy.html',owner.store,lang);
+    p.context.location.search='?o='+orderA;
+    const states=['pending','confirming','paid'], scheduled=[];
+    p.context.setTimeout=fn=>scheduled.push(fn);
+    p.context.fetch=async()=>({json:async()=>({...order,status:states.shift(),resumeAvailable:true})});
+    p.run('attempt.js');p.run('thanks.js');await new Promise(setImmediate);
+    assert.equal(p.element('action').hidden,false);
+    await scheduled.shift()();
+    assert.equal(p.element('action').hidden,true);
+    assert.equal(p.element('title').textContent,lang==='pl'?'Płatność przyjęta':'Payment received');
+    assert.match(p.element('text').textContent,lang==='pl'?/potwierdzenie zamówienia/:/confirmation of your order/);
+    await scheduled.shift()();
+    assert.equal(scheduled.length,0);
+  }
+});
+test('a refunded order says so and stops polling',async()=>{
+  const p=page('dziekujemy.html'),scheduled=[];
+  p.context.setTimeout=fn=>scheduled.push(fn);
+  p.context.fetch=async()=>({ok:true,json:async()=>({...order,status:'refunded'})});
+  p.run('attempt.js');p.run('thanks.js');await new Promise(setImmediate);
+  assert.equal(p.element('title').textContent,'Płatność została zwrócona');
+  assert.equal(p.element('action').hidden,true);
+  assert.equal(scheduled.length,0);
 });
 test('missing failure webhook offers a same-attempt status recheck without claiming cancellation',async()=>{
   const boundPage=await bound(storage(),orderA),p=page('dziekujemy.html',boundPage.store),scheduled=[];

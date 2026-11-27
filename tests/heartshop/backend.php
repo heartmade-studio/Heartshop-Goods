@@ -150,6 +150,19 @@ try {
     check(findOrder($rv['orderId'])['status']==='review' && vouchersFor($rv['orderId'])===[],'review payment issues no codes');
     $rmail=db()->querySingle("SELECT body FROM mail_outbox WHERE order_external_id='{$rv['orderId']}'");
     check(str_contains($rmail,'nie zostały wydane'),'review mail says no codes were issued');
+    // ---------- refunds (shipped goods) ----------
+    $refund=fn($id,$parent)=>applyRefundEvent(['externalId'=>$id,'orderId'=>$parent.'-r1','parentOrderId'=>$parent,'status'=>'COMPLETED']);
+    $pay=fn($id,$tx,$total)=>applyPaymentEvent(['externalId'=>$id,'status'=>'COMPLETED','price'=>(string)$total,'orderId'=>$tx]);
+    $dup=prepareCheckout($input,str_repeat('7',32),$provider);
+    $pay($dup['orderId'],'pm-dup-a',$dup['total']); $pay($dup['orderId'],'pm-dup-b',$dup['total']);
+    check($refund($dup['orderId'],'pm-dup-b')===['status'=>'paid','changed'=>false],'refunding a duplicate payment keeps the parcel order paid');
+    check($refund($dup['orderId'],'pm-dup-a')===['status'=>'refunded','changed'=>true],'refunding the paying transaction withdraws the parcel order');
+    $early=prepareCheckout($input,str_repeat('8',32),$provider);
+    check($refund($early['orderId'],'pm-early')['status']==='pending','a refund before the payment is recorded without changing the order');
+    $pay($early['orderId'],'pm-early',$early['total']);
+    $mails=[];$r=db()->query("SELECT subject,body FROM mail_outbox WHERE order_external_id='{$early['orderId']}'");while($m=$r->fetchArray(SQLITE3_ASSOC))$mails[]=$m;
+    check(findOrder($early['orderId'])['status']==='refunded' && count($mails)===1 && str_starts_with($mails[0]['subject'],'Zwrot')
+        && str_contains($mails[0]['body'],'nie trafi do Furgonetki'),'a payment confirmed after its own refund never ships and mails only the seller');
     $code=$codes[0]['code'];
     check(setVoucherUsed(strtolower(str_replace('-',' ',$code)),true)[0]===true,'redeem accepts the code as typed');
     check(setVoucherUsed($code,true)[1]==='already_used','a code is used only once');

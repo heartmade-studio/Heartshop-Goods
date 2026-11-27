@@ -18,6 +18,10 @@ RewriteRule ^ - [F]
 
   RewriteRule ^api/furgonetka/(.*)$ api/furgonetka.php?route=$1 [QSA,L,E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
 
+# Never serve the rules themselves, whatever the server-wide defaults are.
+<Files ".ht*">
+  Require all denied
+</Files>
 # Only the reviewed API entry points may be requested directly.
 <FilesMatch "^(?!(?:order|status|webhook|furgonetka|panel)\.php$).*\.php$">
   Require all denied

@@ -39,8 +39,10 @@ function secrets(): array {
     static $env = null;
     if ($env !== null) return $env;
     $values = @parse_ini_file(privatePath(), false, INI_SCANNER_RAW);
+    // PAYMOVE_WEBHOOK_SECRET signs the deprecated PAYMENT subscription, which carries no type or
+    // currency. Remove it once the TRANSACTION subscription is verified; one of the two is required.
     if (!is_array($values) || empty($values['PAYMOVE_API_KEY']) || empty($values['PAYMOVE_PRODUCT_ID'])
-        || empty($values['PAYMOVE_WEBHOOK_SECRET'])) {
+        || (empty($values['PAYMOVE_WEBHOOK_SECRET']) && empty($values['PAYMOVE_TRANSACTION_SECRET']))) {
         throw new RuntimeException('Missing private configuration');
     }
     foreach (['MAIL_FROM','MERCHANT_EMAIL'] as $key) {
@@ -82,7 +84,8 @@ function db(): SQLite3 {
         while ($col=$res->fetchArray(SQLITE3_ASSOC)) $cols[]=$col['name'];
         foreach (['tracking_number TEXT','courier_service TEXT','tracking_at INTEGER',
             'idempotency_key TEXT','request_hash TEXT','payment_state TEXT','payment_url TEXT',
-            'payment_attempt_at INTEGER','payment_error TEXT',
+            'payment_attempt_at INTEGER','payment_error TEXT','payment_link_served_at INTEGER',
+            'status_check_after INTEGER NOT NULL DEFAULT 0',
             // NULL offer_type = an order from before typed offers, i.e. shipping.
             'offer_type TEXT','note TEXT','done_at INTEGER','invoice_done_at INTEGER'] as $def) {
             if (!in_array(strtok($def,' '),$cols,true)) $conn->exec("ALTER TABLE orders ADD COLUMN $def");
@@ -155,13 +158,14 @@ function validNip(string $nip): bool {
 }
 
 // The point's address from InPost's public points API (Furgonetka requires an address on every order).
-// false = no such point; null = InPost unreachable, so the order is not blocked.
+// false = no such point; null = InPost unreachable or an unrecognised answer.
 function inpostPoint(string $code): array|false|null {
     $ch = curl_init('https://api-shipx-pl.easypack24.net/v1/points/' . rawurlencode($code));
     curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_CONNECTTIMEOUT => 3, CURLOPT_TIMEOUT => 5]);
     $raw = curl_exec($ch);
     if ($raw === false) return null;
     $p = json_decode($raw, true);
+    if (!is_array($p)) return null;
     if (($p['key'] ?? '') === 'point_not_found') return false;
     $a = $p['address_details'] ?? null;
     if (!is_array($a) || empty($a['city'])) return null;
@@ -231,14 +235,16 @@ function validateShipping(array $in, array $c, array &$o, array &$e): void {
     if ($o['delivery'] === '') $e['delivery'] = 'Wybierz formę dostawy.';
 
     if ($o['delivery'] === 'paczkomat') {
+        // The label shown to the seller and in mails comes only from InPost, never from the buyer.
         $o['point'] = strtoupper(clean($in['point'] ?? '', 20));
-        $o['point_label'] = clean($in['point_label'] ?? '', 160);
+        $o['point_label'] = '';
         if (!preg_match('/^[A-Z0-9-]{4,20}$/', $o['point'])) {
             $e['point'] = 'Wybierz Paczkomat.';
         } else {
             $p = inpostPoint($o['point']);
             if ($p === false) $e['point'] = 'Nie ma Paczkomatu o tym kodzie.';
-            if (is_array($p)) {
+            elseif ($p === null) $e['point'] = 'Nie udało się sprawdzić Paczkomatu. Spróbuj ponownie za chwilę albo wybierz kuriera.';
+            else {
                 $o['point_address'] = $p;
                 $o['point_label'] = "{$p['street']}, {$p['postcode']} {$p['city']}";
             }
@@ -277,10 +283,12 @@ function createPayment(string $externalId, string $number, array $order, int $to
     return $url;
 }
 
-function verifySignature(string $header, string $raw): bool {
+function verifySignature(string $header, string $raw, string $secretName = 'PAYMOVE_WEBHOOK_SECRET'): bool {
     if (!preg_match('/^t=(\d+),v1=([A-Za-z0-9+\/=]+)$/', $header, $m)) return false;
     if (abs(time() - (int)$m[1]) > 300) return false;
-    $expected = base64_encode(hash_hmac('sha256', $m[1] . '.' . $raw, secrets()['PAYMOVE_WEBHOOK_SECRET'], true));
+    $secret = secrets()[$secretName] ?? '';
+    if ($secret === '') return false;
+    $expected = base64_encode(hash_hmac('sha256', $m[1] . '.' . $raw, $secret, true));
     return hash_equals($expected, $m[2]);
 }
 

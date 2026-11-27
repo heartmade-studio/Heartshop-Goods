@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Webhooks follow the Heartshop Vouchers contract: a TRANSACTION subscription (`PAYMOVE_TRANSACTION_SECRET`) accepts only PLN `PAYMENT` and `REFUND` events, and a completion without the merchant `externalId` is matched through the stored checkout link (`signed_completions`, retried by the mail worker, alerted by `--check`). The thank-you page shows "confirming" while PAYMOVE reports processing. The deprecated `PAYMOVE_WEBHOOK_SECRET` is optional once the TRANSACTION secret is set.
+- A signed PAYMOVE `REFUND` of the payment that paid an order moves it to `refunded`: it leaves the Furgonetka export, tracking updates are refused and the seller gets an email. A refund of another transaction changes nothing.
+- A Paczkomat is accepted only when InPost returns its address; the point label always comes from InPost, never the browser.
+- Panel sessions are bound to the current password hash and expire at most 30 days after login. Changing the password ends every session; sessions opened before this release need one new login.
+- Apache denies `.ht*` files explicitly.
+
 ## v0.1.0 — 2026-11-13
 
 - Standalone Heartshop Goods with local simulation, PAYMOVE checkout and seller panel.

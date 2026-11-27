@@ -37,7 +37,7 @@ php scripts/heartshop/retry-mail.php --send /ABS/Heartshop-Goods/public/heartsho
 php scripts/heartshop/retry-mail.php --check /ABS/Heartshop-Goods/public/heartshop/api/lib.php
 ```
 
-After testing the configured mail transport, schedule `--send` once per minute under the same OS user as PHP. `--check` reports stalled mail; arrange external monitoring of its exit status/output and the transport. `--status` does not send but may initialize the database. No cron is installed by this project.
+After testing the configured mail transport, schedule `--send` once per minute under the same OS user as PHP. It also retries signed payment matches. Monitor `--check` for stalled mail and for orders pending more than 15 minutes whose last PAYMOVE status was `COMPLETED` or whose window contains an unmatched signed completion; it prints only order numbers and ages. Arrange external monitoring of its exit status/output and the transport. `--status` does not send but may initialize the database. No cron is installed by this project.
 
 Back up SQLite using its backup API/CLI `.backup`, including a tested restore; do not copy a live WAL database file alone. Store backups outside the web root, restrict access and set retention. Protect host access/error logs because order URLs are bearer links. For updates, use an atomic release or pause checkout while replacing a mutually compatible PHP/JS release. Never overwrite newly accepted orders during rollback.
 
@@ -52,7 +52,7 @@ Run `bash scripts/heartshop/check.sh`, then exercise your HTTPS sandbox installa
 
 Finally perform an explicitly authorized small live transaction and its operational handling before announcing the merchant shop as live-verified. This repository's initial extraction did not perform real payments, shipment purchases, invoice issuance or outbound mail.
 
-`review` orders and attempts held with `payment_review` require reconciliation against PAYMOVE (uncertain creates recover automatically; see docs/integrations.md); do not mark paid by editing SQLite without a reviewed recovery procedure. Refunds and double payments after a late completion are manual merchant operations. Inventory is not reserved or tracked by Heartshop.
+`review` orders and attempts held with `payment_review` require reconciliation against PAYMOVE (uncertain creates recover automatically; see docs/integrations.md); do not mark paid by editing SQLite without a reviewed recovery procedure. Refunds and double payments after a late completion are manual merchant operations. A refund PAYMOVE confirms through the TRANSACTION webhook moves the order to `refunded` and removes it from the Furgonetka export (see docs/integrations.md). Inventory is not reserved or tracked by Heartshop.
 
 ## Build and hosting acceptance
 
