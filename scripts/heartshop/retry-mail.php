@@ -14,7 +14,7 @@ try {
         exit;
     }
     if ($argv[1]==='--check') {
-        // Silent while healthy: any output makes cron mail it to MAILTO. Counts only, never message content.
+        // Silent while healthy: any output makes cron mail it to MAILTO. Only order numbers and ages identify pending payments.
         $now=time();
         $q=db()->querySingle('SELECT COUNT(*) AS unsent, MIN(created_at) AS oldest, MAX(attempts) AS attempts FROM mail_outbox WHERE status<>\'sent\'',true);
         $problems=[];
@@ -23,7 +23,17 @@ try {
         $errors=dirname(privatePath()).'/mail-worker.err';
         clearstatcache();
         if (is_file($errors) && filesize($errors)>0 && $now-filemtime($errors)<3600) $problems[]='worker errors in the last hour (mail-worker.err)';
-        if (!$problems) exit(0);
+        $stuck=db()->query('SELECT o.id, unixepoch()-o.created_at AS age FROM orders o
+            WHERE o.status="pending" AND o.created_at<unixepoch()-900 AND (
+                json_extract(o.data,"$.payment_observation.status")="COMPLETED" OR EXISTS (
+                    SELECT 1 FROM signed_completions c WHERE c.matched_order IS NULL AND '.CONFIRMATION_WINDOW.'))
+            ORDER BY o.created_at,o.id');
+        $alert=false;
+        while ($row=$stuck->fetchArray(SQLITE3_ASSOC)) {
+            echo orderNumber((int)$row['id']).' pending '.intdiv((int)$row['age'],60).' min'.PHP_EOL;
+            $alert=true;
+        }
+        if (!$problems) exit($alert?1:0);
         echo 'Heartshop mail alert for '.shopOrigin().': '.implode('; ',$problems).'. Mail may not be reaching customers.'.PHP_EOL;
         exit(1);
     }
@@ -32,6 +42,12 @@ try {
     if (is_link($lockPath)) throw new RuntimeException('Unsafe worker lock');
     $lock=fopen($lockPath,'c');
     if (!$lock || !flock($lock,LOCK_EX|LOCK_NB)) { fwrite(STDERR,"Worker busy\n");exit(3); }
+    $due=db()->query('SELECT order_id FROM confirmation_checks WHERE next_at<=unixepoch() ORDER BY next_at, rowid LIMIT 8');
+    $ids=[]; while ($row=$due->fetchArray(SQLITE3_ASSOC)) $ids[]=$row['order_id'];
+    $due->finalize();
+    foreach ($ids as $id) {
+        try { checkSignedCompletion($id); } catch (Throwable $e) { logError($e,'confirmation_check'); }
+    }
     $counts=processMailQueue(null,20);
     echo json_encode($counts).PHP_EOL;
     exit($counts['failed']>0?1:0);
